@@ -88,7 +88,7 @@ impl ResultTable {
         let mut widths: Vec<usize> = self
             .columns
             .iter()
-            .map(|c| c.name.chars().count())
+            .map(|c| c.name.len().saturating_add(3).saturating_add(c.type_name.len())) // "name (type)"
             .collect();
 
         for row in self.rows.iter().take(SAMPLE_ROWS) {
@@ -164,12 +164,13 @@ impl Component for ResultTable {
             return;
         }
 
-        // Header row.
+        // Header row with column names and types.
         let header_cells: Vec<Cell<'_>> = self
             .columns
             .iter()
             .map(|c| {
-                Cell::from(c.name.as_str()).style(Style::default().add_modifier(Modifier::BOLD))
+                Cell::from(format!("{} ({})", c.name, c.type_name))
+                    .style(Style::default().add_modifier(Modifier::BOLD))
             })
             .collect();
         let header = Row::new(header_cells).height(1);
