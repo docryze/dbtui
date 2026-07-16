@@ -93,6 +93,10 @@ pub struct Theme {
     pub border_normal: Color,
     /// Default text color.
     pub text: Color,
+    /// Dimmed text color (NULL, secondary info).
+    pub text_dim: Color,
+    /// Default background color (for alternating row styles).
+    pub bg: Color,
     /// Status bar "ready"/"connected" indicator color.
     pub status_ready: Color,
     /// Status bar error indicator color.
@@ -105,6 +109,8 @@ impl Default for Theme {
             border_focused: Color::Cyan,
             border_normal: Color::DarkGray,
             text: Color::Gray,
+            text_dim: Color::DarkGray,
+            bg: Color::Reset,
             status_ready: Color::Green,
             status_error: Color::Red,
         }

@@ -174,21 +174,28 @@ impl Component for ResultTable {
             .collect();
         let header = Row::new(header_cells).height(1);
 
-        // Data rows.
+        // Data rows with zebra striping.
+        let alt_bg = ctx.theme.bg;
         let data_rows: Vec<Row<'_>> = self
             .rows
             .iter()
-            .map(|row| {
+            .enumerate()
+            .map(|(i, row)| {
                 let cells: Vec<Cell<'_>> = row
                     .iter()
                     .map(|cell| match cell {
                         CellValue::Null => {
-                            Cell::from("NULL").style(Style::default().fg(ctx.theme.text))
+                            Cell::from("NULL").style(Style::default().fg(ctx.theme.text_dim))
                         }
                         CellValue::Text(s) | CellValue::BytesHex(s) => Cell::from(s.as_str()),
                     })
                     .collect();
-                Row::new(cells)
+                let style = if i % 2 == 1 {
+                    Style::default().bg(alt_bg)
+                } else {
+                    Style::default()
+                };
+                Row::new(cells).style(style)
             })
             .collect();
 
