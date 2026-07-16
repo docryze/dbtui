@@ -246,6 +246,29 @@ impl Component for QueryEditor {
                 self.cursor = 0;
                 Action::RequestRender
             }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Delete word backward (until previous space or beginning).
+                if self.cursor > 0 {
+                    let before = &self.buffer[..self.cursor];
+                    let word_start = before
+                        .char_indices()
+                        .rev()
+                        .skip_while(|(_, ch)| ch.is_whitespace())
+                        .skip_while(|(_, ch)| !ch.is_whitespace())
+                        .map(|(i, _)| i)
+                        .next()
+                        .unwrap_or(0);
+                    self.buffer.drain(word_start..self.cursor);
+                    self.cursor = word_start;
+                }
+                Action::RequestRender
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Delete from cursor to beginning of line.
+                self.buffer.drain(..self.cursor);
+                self.cursor = 0;
+                Action::RequestRender
+            }
             KeyCode::Enter if !self.buffer.is_empty() => {
                 let sql = self.buffer.clone();
                 self.push_history(&sql);

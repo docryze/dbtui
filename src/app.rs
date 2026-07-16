@@ -488,6 +488,8 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
         ("PgUp / PgDn", "Scroll page in results"),
         ("Ctrl+U / Ctrl+D", "Scroll half page up / down"),
         ("Ctrl+L", "Clear query editor"),
+        ("Ctrl+W", "Delete word backward"),
+        ("Ctrl+U", "Delete to line start (editor)"),
         ("?", "Toggle this help"),
         ("D", "Disconnect"),
         ("Ctrl+C", "Cancel query / Quit"),
