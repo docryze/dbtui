@@ -3,12 +3,14 @@
 //! Connects via `MySqlPool`, supports schema introspection via
 //! `information_schema`, and streams query results page-by-page.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use futures::StreamExt;
+use rust_decimal::Decimal;
 use sqlx::mysql::{MySqlConnectOptions, MySqlPool, MySqlPoolOptions, MySqlSslMode};
 use sqlx::{AssertSqlSafe, Column, Row, TypeInfo};
 use tokio::sync::mpsc;
@@ -137,6 +139,29 @@ impl Database for MySqlBackend {
             .collect()
     }
 
+    async fn list_table_columns(
+        &self,
+        schema: &str,
+    ) -> Result<HashMap<String, Vec<String>>, DbError> {
+        let rows = sqlx::query(
+            "SELECT TABLE_NAME, COLUMN_NAME \
+             FROM information_schema.COLUMNS \
+             WHERE TABLE_SCHEMA = ? \
+             ORDER BY TABLE_NAME, ORDINAL_POSITION",
+        )
+        .bind(schema)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut result: HashMap<String, Vec<String>> = HashMap::new();
+        for row in rows {
+            let table: String = row.try_get(0)?;
+            let column: String = row.try_get(1)?;
+            result.entry(table).or_default().push(column);
+        }
+        Ok(result)
+    }
+
     async fn execute(&self, sql_text: &str) -> Result<ExecResult, DbError> {
         let result = sqlx::query(AssertSqlSafe(sql_text))
             .execute(&self.pool)
@@ -166,12 +191,17 @@ impl Database for MySqlBackend {
             let row = match stream.next().await {
                 Some(Ok(row)) => row,
                 Some(Err(e)) => {
-                    let db_err = DbError::from(e);
-                    let _ = tx.send(DbMessage::QueryPage(query_id, Err(db_err))).await;
+                    let err_msg = e.to_string();
+                    let _ = tx
+                        .send(DbMessage::QueryPage(
+                            query_id,
+                            Err(DbError::Other(err_msg.clone())),
+                        ))
+                        .await;
                     let _ = tx
                         .send(DbMessage::QueryComplete(
                             query_id,
-                            Err(DbError::Other("query execution error".into())),
+                            Err(DbError::Other(err_msg)),
                         ))
                         .await;
                     return Ok(());
@@ -291,6 +321,30 @@ fn row_to_cells(row: &sqlx::mysql::MySqlRow) -> Vec<CellValue> {
 
 /// Decode a single cell, trying common types in order of likelihood.
 fn decode_cell(row: &sqlx::mysql::MySqlRow, idx: usize) -> CellValue {
+    // DateTime<Utc> (MySQL TIMESTAMP).
+    if let Ok(Some(v)) = row.try_get::<Option<DateTime<Utc>>, _>(idx) {
+        return CellValue::Text(v.format("%Y-%m-%d %H:%M:%S").to_string());
+    }
+    if matches!(row.try_get::<Option<DateTime<Utc>>, _>(idx), Ok(None)) {
+        return CellValue::Null;
+    }
+
+    // NaiveDateTime (MySQL DATETIME).
+    if let Ok(Some(v)) = row.try_get::<Option<NaiveDateTime>, _>(idx) {
+        return CellValue::Text(v.format("%Y-%m-%d %H:%M:%S").to_string());
+    }
+    if matches!(row.try_get::<Option<NaiveDateTime>, _>(idx), Ok(None)) {
+        return CellValue::Null;
+    }
+
+    // NaiveDate (MySQL DATE).
+    if let Ok(Some(v)) = row.try_get::<Option<NaiveDate>, _>(idx) {
+        return CellValue::Text(v.format("%Y-%m-%d").to_string());
+    }
+    if matches!(row.try_get::<Option<NaiveDate>, _>(idx), Ok(None)) {
+        return CellValue::Null;
+    }
+
     // String — also detects SQL NULL via Option.
     if let Ok(Some(v)) = row.try_get::<Option<String>, _>(idx) {
         return CellValue::Text(v);
@@ -323,19 +377,11 @@ fn decode_cell(row: &sqlx::mysql::MySqlRow, idx: usize) -> CellValue {
         return CellValue::Null;
     }
 
-    // NaiveDateTime.
-    if let Ok(Some(v)) = row.try_get::<Option<NaiveDateTime>, _>(idx) {
+    // Decimal (MySQL DECIMAL, NUMERIC).
+    if let Ok(Some(v)) = row.try_get::<Option<Decimal>, _>(idx) {
         return CellValue::Text(v.to_string());
     }
-    if matches!(row.try_get::<Option<NaiveDateTime>, _>(idx), Ok(None)) {
-        return CellValue::Null;
-    }
-
-    // NaiveDate.
-    if let Ok(Some(v)) = row.try_get::<Option<NaiveDate>, _>(idx) {
-        return CellValue::Text(v.to_string());
-    }
-    if matches!(row.try_get::<Option<NaiveDate>, _>(idx), Ok(None)) {
+    if matches!(row.try_get::<Option<Decimal>, _>(idx), Ok(None)) {
         return CellValue::Null;
     }
 

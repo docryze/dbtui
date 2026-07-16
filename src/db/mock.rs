@@ -51,6 +51,13 @@ impl Database for MockBackend {
         Ok(self.columns.clone())
     }
 
+    async fn list_table_columns(
+        &self,
+        _schema: &str,
+    ) -> Result<std::collections::HashMap<String, Vec<String>>, DbError> {
+        Ok(std::collections::HashMap::new())
+    }
+
     async fn execute(&self, _sql: &str) -> Result<ExecResult, DbError> {
         Ok(self.exec_result.clone())
     }

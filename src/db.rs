@@ -4,11 +4,14 @@
 //! defines the trait and data shapes so that `DbMessage` and connection
 //! handling compile from M1.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
+
+use crate::config::ConnectionConfig;
 
 use crate::error::DbError;
 use crate::event::{ConnectionId, DbMessage, QueryId};
@@ -144,10 +147,14 @@ pub struct ExecResult {
 }
 
 /// A snapshot of schemas and tables for a connection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SchemaSnapshot {
     /// Tree of `(schema_name, table_names)` pairs.
     pub tree: Vec<(String, Vec<String>)>,
+    /// Column names for tables in the active database.
+    /// Keyed by table name, value is ordered list of column names.
+    /// Populated when a database is selected as active.
+    pub active_table_columns: HashMap<String, Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +171,8 @@ pub struct ConnectionHandle {
     pub backend: Arc<dyn Database>,
     /// Schema snapshot, populated after `LoadSchema`.
     pub schema_snapshot: Option<SchemaSnapshot>,
+    /// Original connection config (for reconnecting with a different database).
+    pub config: ConnectionConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +196,13 @@ pub trait Database: Send + Sync {
 
     /// Describe the columns of a table.
     async fn describe_table(&self, schema: &str, table: &str) -> Result<Vec<ColumnInfo>, DbError>;
+
+    /// List all tables and their column names for a schema.
+    /// Returns a map of table_name → [column_names].
+    async fn list_table_columns(
+        &self,
+        schema: &str,
+    ) -> Result<HashMap<String, Vec<String>>, DbError>;
 
     /// Execute a non-query statement (INSERT/UPDATE/DDL).
     async fn execute(&self, sql: &str) -> Result<ExecResult, DbError>;
