@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 
 use crate::components::{AppContext, AppMode, Component, Components, ConnectionList, Panel, Theme};
 use crate::config::ConnectionConfig;
-use crate::db::{ConnectionHandle, QueryMeta, mysql::MySqlBackend};
+use crate::db::{ConnectionHandle, QueryMeta, SchemaSnapshot, mysql::MySqlBackend};
 use crate::error::Error;
 use crate::event::{Action, DbMessage, Event, QueryId};
 use crate::tui::Tui;
@@ -126,6 +126,10 @@ impl App {
     }
 
     /// Execute an action's side effects.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "handles all Action variants centrally"
+    )]
     fn apply_action(&mut self, action: &Action) {
         match action {
             Action::Quit => self.should_quit = true,
@@ -206,13 +210,49 @@ impl App {
                     }
                 }
             }
+            Action::FillQuery(sql) => {
+                self.components.query_editor.set_text(sql.clone());
+                self.focus = Panel::QueryEditor;
+            }
+            Action::LoadSchema(conn_id) => {
+                let conn_id = *conn_id;
+                if let Some(ref conn) = self.connection {
+                    let backend = std::sync::Arc::clone(&conn.backend);
+                    let tx = self.db_tx.clone();
+                    tokio::spawn(async move {
+                        match backend.list_schemas().await {
+                            Ok(schemas) => {
+                                let mut tree = Vec::new();
+                                for s in &schemas {
+                                    let tables: Vec<String> = backend
+                                        .list_tables(&s.name)
+                                        .await
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .map(|t| t.name)
+                                        .collect();
+                                    tree.push((s.name.clone(), tables));
+                                }
+                                let _ = tx
+                                    .send(DbMessage::SchemaLoaded(
+                                        conn_id,
+                                        Ok(SchemaSnapshot { tree }),
+                                    ))
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = tx.send(DbMessage::SchemaLoaded(conn_id, Err(e))).await;
+                            }
+                        }
+                    });
+                }
+            }
             // No-op variants — implemented in later milestones.
             Action::None
             | Action::RequestRender
             | Action::SwitchTab(_)
             | Action::Disconnect(_)
-            | Action::CancelQuery(_)
-            | Action::LoadSchema(_) => {}
+            | Action::CancelQuery(_) => {}
         }
         self.dirty = true;
     }
@@ -224,8 +264,11 @@ impl App {
                 self.mode = AppMode::Normal;
                 match result {
                     Ok(handle) => {
+                        let conn_id = handle.id;
                         self.connection = Some(handle);
                         self.focus = Panel::QueryEditor;
+                        // Auto-load schema tree on connect.
+                        self.apply_action(&Action::LoadSchema(conn_id));
                     }
                     Err(e) => {
                         self.last_error = Some(e.to_string());
@@ -259,6 +302,17 @@ impl App {
                 }
                 self.pending_query = None;
             }
+            DbMessage::SchemaLoaded(_, result) => match result {
+                Ok(snapshot) => {
+                    if let Some(ref mut conn) = self.connection {
+                        conn.schema_snapshot = Some(snapshot.clone());
+                    }
+                    self.components.schema_tree.set_data(&snapshot);
+                }
+                Err(e) => {
+                    self.last_error = Some(e.to_string());
+                }
+            },
             _ => {}
         }
         self.dirty = true;
