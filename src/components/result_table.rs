@@ -130,13 +130,20 @@ impl Component for ResultTable {
             ctx.theme.border_normal
         };
 
+        let row_pos = if self.has_data() {
+            let current = self.state.selected().unwrap_or(0).saturating_add(1);
+            format!(" row {current}/")
+        } else {
+            String::new()
+        };
+
         let title: String = if self.complete {
             if self.truncated {
-                format!(" Results ({} rows, truncated) ", self.rows_returned)
-            } else if self.affected_rows.is_some() {
-                format!(" Results ({} affected) ", self.affected_rows.unwrap_or(0))
+                format!(" Results{pos}{total} rows, truncated ", pos = row_pos, total = self.rows_returned)
+            } else if let Some(affected) = self.affected_rows {
+                format!(" Results ({affected} affected) ")
             } else {
-                format!(" Results ({} rows) ", self.rows_returned)
+                format!(" Results{pos}{total} rows ", pos = row_pos, total = self.rows_returned)
             }
         } else if self.has_data() {
             " Results (querying...) ".into()
