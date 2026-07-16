@@ -207,6 +207,8 @@ impl Component for ResultTable {
             return Action::None;
         }
 
+        let row_count = self.rows.len();
+
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.state.select_previous();
@@ -214,6 +216,25 @@ impl Component for ResultTable {
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.state.select_next();
+                Action::RequestRender
+            }
+            KeyCode::PageUp => {
+                let idx = self.state.selected().unwrap_or(0);
+                self.state.select(Some(idx.saturating_sub(10)));
+                Action::RequestRender
+            }
+            KeyCode::PageDown => {
+                let idx = self.state.selected().unwrap_or(0);
+                let next = idx.saturating_add(10).min(row_count.saturating_sub(1));
+                self.state.select(Some(next));
+                Action::RequestRender
+            }
+            KeyCode::Home => {
+                self.state.select(Some(0));
+                Action::RequestRender
+            }
+            KeyCode::End => {
+                self.state.select(Some(row_count.saturating_sub(1)));
                 Action::RequestRender
             }
             KeyCode::Esc => Action::Focus(Panel::QueryEditor),

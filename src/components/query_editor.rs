@@ -241,6 +241,11 @@ impl Component for QueryEditor {
                 self.cursor = self.buffer.len();
                 Action::RequestRender
             }
+            KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.buffer.clear();
+                self.cursor = 0;
+                Action::RequestRender
+            }
             KeyCode::Enter if !self.buffer.is_empty() => {
                 let sql = self.buffer.clone();
                 self.push_history(&sql);
