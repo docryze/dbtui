@@ -41,8 +41,11 @@ impl Component for ConnectionList {
             .border_style(Style::default().fg(ctx.theme.border_focused));
 
         if self.configs.is_empty() {
-            let hint =
-                " No connections configured.\n\n Create connections.toml in:\n config_dir/dbtui/";
+            let hint = "\n\n No connections configured.\n\n \
+                 Create connections.toml at:\n \
+                 ~/.config/dbtui/connections.toml\n\n \
+                 Press [?] for help"
+                .to_string();
             frame.render_widget(Paragraph::new(hint).block(block), area);
             return;
         }
