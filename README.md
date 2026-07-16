@@ -69,6 +69,7 @@ ssl_ca = "/path/to/ca.pem" # required for verify_ca / verify_identity
 | `→` | Expand schema in tree |
 | `←` | Collapse schema in tree |
 | `Esc` | Return to query editor from results / Close popup |
+| `g` / `G` | Go to first / last row in result table |
 | `r` | Refresh schema tree |
 | `?` | Toggle help popup |
 | `D` | Disconnect from current database |

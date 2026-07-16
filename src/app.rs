@@ -484,6 +484,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
         ("Enter", "Execute query / Connect / Toggle tree"),
         ("Esc", "Return to editor from results"),
         ("r", "Refresh schema tree"),
+        ("g / G", "Go to top / bottom in results"),
         ("?", "Toggle this help"),
         ("D", "Disconnect"),
         ("Ctrl+C", "Cancel query / Quit"),
