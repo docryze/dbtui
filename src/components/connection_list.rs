@@ -7,6 +7,7 @@ use crossterm::event::{KeyCode, KeyEventKind};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
 use crate::components::{AppContext, Component};
@@ -41,11 +42,19 @@ impl Component for ConnectionList {
             .border_style(Style::default().fg(ctx.theme.border_focused));
 
         if self.configs.is_empty() {
-            let hint = "\n\n No connections configured.\n\n \
-                 Create connections.toml at:\n \
-                 ~/.config/dbtui/connections.toml\n\n \
-                 Press [?] for help"
-                .to_string();
+            let hint = format!(
+                "\n\n\
+                 {welcome:^width$}\n\n\
+                 No connections configured yet.\n\
+                 Create a connections.toml at:\n\
+                 \n  \
+                 {path}\n\n\
+                 Press [?] for help\n  \
+                 ",
+                welcome = "Welcome to dbtui",
+                path = "~/.config/dbtui/connections.toml",
+                width = area.width.saturating_sub(4) as usize
+            );
             frame.render_widget(
                 Paragraph::new(hint)
                     .style(Style::default().fg(ctx.theme.text_dim))
@@ -58,7 +67,16 @@ impl Component for ConnectionList {
         let items: Vec<ListItem<'_>> = self
             .configs
             .iter()
-            .map(|c| ListItem::new(format!(" {} \u{2192} {}", c.name, c.host)))
+            .map(|c| {
+                let name = Span::raw(&c.name);
+                let arrow = Span::styled(" → ", Style::default().fg(ctx.theme.text_dim));
+                let host = Span::styled(&c.host, Style::default().fg(ctx.theme.text_dim));
+                let driver = Span::styled(
+                    format!(" [{:?}]", c.driver),
+                    Style::default().fg(ctx.theme.text_dim),
+                );
+                ListItem::new(Line::from(vec![name, arrow, host, driver]))
+            })
             .collect();
 
         let list = List::new(items).block(block).highlight_style(
