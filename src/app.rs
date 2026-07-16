@@ -6,9 +6,13 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::Style;
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use tokio::sync::mpsc;
 
-use crate::components::{AppContext, AppMode, Component, Components, ConnectionList, Panel, Theme};
+use crate::components::{
+    AppContext, AppMode, Component, Components, ConnectionList, Panel, PopupKind, Theme,
+};
 use crate::config::ConnectionConfig;
 use crate::db::{ConnectionHandle, QueryMeta, SchemaSnapshot, mysql::MySqlBackend};
 use crate::error::Error;
@@ -94,6 +98,23 @@ impl App {
                 return Action::None;
             }
 
+            // Popup mode — only Esc/q close the popup.
+            if matches!(self.mode, AppMode::Popup(_)) {
+                return match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => Action::ClosePopup,
+                    _ => Action::None,
+                };
+            }
+
+            // 'r' refreshes the schema tree (only when SchemaTree is focused and connected).
+            if key.code == KeyCode::Char('r')
+                && !key.modifiers.contains(KeyModifiers::CONTROL)
+                && self.focus == Panel::SchemaTree
+                && let Some(ref conn) = self.connection
+            {
+                return Action::LoadSchema(conn.id);
+            }
+
             match key.code {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     // Cancel query if one is running, otherwise quit.
@@ -106,6 +127,14 @@ impl App {
                     // Don't quit when typing in the query editor.
                     if !(self.connection.is_some() && self.focus == Panel::QueryEditor) {
                         return Action::Quit;
+                    }
+                }
+                KeyCode::Char('?') => {
+                    return Action::OpenPopup(PopupKind::Help);
+                }
+                KeyCode::Char('D') => {
+                    if let Some(ref conn) = self.connection {
+                        return Action::Disconnect(conn.id);
                     }
                 }
                 KeyCode::Tab => {
@@ -283,8 +312,24 @@ impl App {
                 self.notice = Some("Query cancelled".into());
                 tracing::info!("query cancelled");
             }
+            Action::Disconnect(_) => {
+                // Cancel any running query.
+                if let Some(handle) = self.query_handle.take() {
+                    handle.abort();
+                }
+                self.connection = None;
+                self.pending_query = None;
+                self.query_handle = None;
+                self.components.schema_tree = crate::components::SchemaTree::default();
+                self.components.result_table = crate::components::ResultTable::default();
+                self.components.query_editor = crate::components::QueryEditor::default();
+                self.focus = Panel::SchemaTree;
+                self.notice = Some("Disconnected".into());
+                self.last_error = None;
+                tracing::info!("disconnected");
+            }
             // No-op variants — implemented in later milestones.
-            Action::None | Action::RequestRender | Action::SwitchTab(_) | Action::Disconnect(_) => {
+            Action::None | Action::RequestRender | Action::SwitchTab(_) => {
             }
         }
         self.dirty = true;
@@ -380,7 +425,54 @@ impl App {
         }
 
         self.components.status_bar.render(frame, right_bottom, &ctx);
+
+        // Draw help popup overlay.
+        if self.mode == AppMode::Popup(PopupKind::Help) {
+            render_help_popup(frame, area);
+        }
     }
+}
+
+/// Render the help popup overlay showing keybindings.
+fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
+    let popup = Rect {
+        x: area.width.saturating_sub(50) / 2,
+        y: area.height.saturating_sub(20) / 2,
+        width: 50.min(area.width),
+        height: 20.min(area.height),
+    };
+
+    let keybindings = [
+        ("Tab / Shift+Tab", "Cycle panel focus"),
+        ("↑/↓/←/→", "Navigate / Move cursor"),
+        ("Enter", "Execute query / Connect / Toggle tree"),
+        ("Esc", "Return to editor from results"),
+        ("r", "Refresh schema tree"),
+        ("?", "Toggle this help"),
+        ("D", "Disconnect"),
+        ("Ctrl+C", "Cancel query / Quit"),
+        ("q", "Quit (except in editor)"),
+    ];
+
+    let text: String = {
+        use std::fmt::Write;
+        keybindings
+            .iter()
+            .fold(String::new(), |mut acc, (key, action)| {
+                let _ = writeln!(acc, "  {key:<20} {action}");
+                acc
+            })
+    };
+
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Help ")
+        .border_style(Style::default().fg(ratatui::style::Color::Cyan));
+    frame.render_widget(
+        Paragraph::new(text).block(block).wrap(Wrap { trim: false }),
+        popup,
+    );
 }
 
 /// Check if SQL is a query (SELECT/SHOW/EXPLAIN/WITH) vs. execute.

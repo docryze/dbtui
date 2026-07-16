@@ -6,12 +6,33 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Paragraph;
 
-use crate::components::{AppContext, Component};
+use crate::components::{AppContext, Component, Panel};
 use crate::event::{Action, Event};
 
 /// Bottom status bar showing current state and key hints.
 #[derive(Debug, Default)]
 pub struct StatusBar;
+
+impl StatusBar {
+    /// Build context-sensitive key hints based on application state.
+    fn hints(ctx: &AppContext<'_>) -> &'static str {
+        if ctx.is_connecting {
+            return "";
+        }
+        match ctx.connection_name {
+            None => " [?] help   [q] quit",
+            Some(_) => match ctx.focus {
+                Panel::SchemaTree => " [↑↓] navigate   [r] refresh   [?] help   [D] disconnect",
+                Panel::QueryEditor => {
+                    " [Enter] execute   [↑↓] history   [Tab] focus   [?] help"
+                }
+                Panel::ResultTable => {
+                    " [↑↓] scroll   [Esc] editor   [Tab] focus   [?] help"
+                }
+            },
+        }
+    }
+}
 
 impl Component for StatusBar {
     fn render(&self, frame: &mut Frame<'_>, area: Rect, ctx: &AppContext<'_>) {
@@ -21,16 +42,21 @@ impl Component for StatusBar {
             ctx.connection_name,
             ctx.notice,
         ) {
-            (Some(err), _, _, _) => format!(" dbtui \u{00b7} ERROR: {err} "),
-            (None, true, _, _) => " dbtui \u{00b7} connecting... ".into(),
+            (Some(err), _, _, _) => format!(" \u{2716} ERROR: {err} "),
+            (None, true, _, _) => " \u{25D4} connecting... ".into(),
             (None, false, Some(name), Some(notice)) => {
-                format!(" dbtui \u{00b7} {name} \u{00b7} {notice} ")
+                format!(" \u{25C9} {name}  \u{00b7} {notice} ")
             }
             (None, false, Some(name), None) => {
-                format!(" dbtui \u{00b7} {name} \u{00b7} connected ")
+                format!(" \u{25C9} {name}  \u{00b7} connected ")
             }
-            (None, false, None, _) => " dbtui \u{00b7} ready \u{00b7} q:quit ".into(),
+            (None, false, None, _) => " \u{25CB} ready ".into(),
         };
+
+        let hints = Self::hints(ctx);
+        let label_len = u16::try_from(label.len()).unwrap_or(u16::MAX);
+        let width: usize = area.width.saturating_sub(label_len).into();
+        let full = format!("{label}{hints:>width$}");
 
         let color = if ctx.error_message.is_some() {
             ctx.theme.status_error
@@ -39,7 +65,7 @@ impl Component for StatusBar {
         };
 
         let style = Style::default().fg(color);
-        frame.render_widget(Paragraph::new(label).style(style), area);
+        frame.render_widget(Paragraph::new(full).style(style), area);
     }
 
     fn handle_event(&mut self, _event: &Event, _ctx: &AppContext<'_>) -> Action {
