@@ -6,6 +6,7 @@ use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::components::{AppContext, Component, Panel};
@@ -186,8 +187,17 @@ impl Component for QueryEditor {
             .border_style(Style::default().fg(border_color));
 
         let inner = block.inner(area);
-        let display = format!("{PROMPT}{}", self.buffer);
-        frame.render_widget(Paragraph::new(display).block(block), area);
+        // Style the prompt with highlight color when focused, normal otherwise.
+        let prompt_style = if focused {
+            Style::default().fg(ctx.theme.highlight)
+        } else {
+            Style::default().fg(ctx.theme.text_dim)
+        };
+        let line = Line::from(vec![
+            Span::styled(PROMPT, prompt_style),
+            Span::raw(&self.buffer),
+        ]);
+        frame.render_widget(Paragraph::new(line).block(block), area);
 
         // Position the terminal cursor when focused.
         if focused {

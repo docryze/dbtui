@@ -46,7 +46,12 @@ impl Component for ConnectionList {
                  ~/.config/dbtui/connections.toml\n\n \
                  Press [?] for help"
                 .to_string();
-            frame.render_widget(Paragraph::new(hint).block(block), area);
+            frame.render_widget(
+                Paragraph::new(hint)
+                    .style(Style::default().fg(ctx.theme.text_dim))
+                    .block(block),
+                area,
+            );
             return;
         }
 

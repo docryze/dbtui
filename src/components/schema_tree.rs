@@ -91,7 +91,12 @@ impl Component for SchemaTree {
             } else {
                 " No connection"
             };
-            frame.render_widget(Paragraph::new(text).block(block), area);
+            frame.render_widget(
+                Paragraph::new(text)
+                    .style(Style::default().fg(ctx.theme.text_dim))
+                    .block(block),
+                area,
+            );
             return;
         }
 

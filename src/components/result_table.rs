@@ -158,7 +158,9 @@ impl Component for ResultTable {
 
         if !self.has_data() {
             frame.render_widget(
-                ratatui::widgets::Paragraph::new(" No results").block(block),
+                ratatui::widgets::Paragraph::new(" No results")
+                    .style(Style::default().fg(ctx.theme.text_dim))
+                    .block(block),
                 area,
             );
             return;
