@@ -236,11 +236,11 @@ impl Component for ResultTable {
                 self.state.select(Some(next));
                 Action::RequestRender
             }
-            KeyCode::Home => {
+            KeyCode::Home | KeyCode::Char('g') => {
                 self.state.select(Some(0));
                 Action::RequestRender
             }
-            KeyCode::End => {
+            KeyCode::End | KeyCode::Char('G') => {
                 self.state.select(Some(row_count.saturating_sub(1)));
                 Action::RequestRender
             }
