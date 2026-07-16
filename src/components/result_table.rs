@@ -3,7 +3,7 @@
 //! Shows column headers and rows from a [`ResultSet`], with adaptive
 //! column widths and `TableState`-based scrolling.
 
-use crossterm::event::{KeyCode, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
@@ -233,6 +233,17 @@ impl Component for ResultTable {
             KeyCode::PageDown => {
                 let idx = self.state.selected().unwrap_or(0);
                 let next = idx.saturating_add(10).min(row_count.saturating_sub(1));
+                self.state.select(Some(next));
+                Action::RequestRender
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let idx = self.state.selected().unwrap_or(0);
+                self.state.select(Some(idx.saturating_sub(5)));
+                Action::RequestRender
+            }
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let idx = self.state.selected().unwrap_or(0);
+                let next = idx.saturating_add(5).min(row_count.saturating_sub(1));
                 self.state.select(Some(next));
                 Action::RequestRender
             }
