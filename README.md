@@ -69,7 +69,7 @@ ssl_ca = "/path/to/ca.pem" # required for verify_ca / verify_identity
 | `→` | Expand schema in tree |
 | `←` | Collapse schema in tree |
 | `Esc` | Return to query editor from results |
-| `Ctrl+C` | Quit |
+| `Ctrl+C` | Cancel running query, or quit |
 | `q` | Quit (except when typing in query editor) |
 
 ## Architecture

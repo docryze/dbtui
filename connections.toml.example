@@ -1,0 +1,40 @@
+# dbtui connection configuration
+# Copy to ~/.config/dbtui/connections.toml and edit
+#
+# tls options: disabled, preferred, required, verify_ca, verify_identity
+
+[[connections]]
+name = "local"
+driver = "mysql"
+host = "127.0.0.1"
+port = 3306
+user = "root"
+password = ""
+database = ""
+tls = "disabled"
+
+# CA certificate verification
+# [[connections]]
+# name = "prod"
+# driver = "mysql"
+# host = "db.example.com"
+# port = 3306
+# user = "readonly"
+# password = "secret"
+# database = "proddb"
+# tls = "verify_ca"
+# ssl_ca = "/path/to/ca.pem"
+
+# Mutual TLS
+# [[connections]]
+# name = "mtls"
+# driver = "mysql"
+# host = "db.example.com"
+# port = 3306
+# user = "app"
+# password = "secret"
+# database = "appdb"
+# tls = "verify_identity"
+# ssl_ca = "/path/to/ca.pem"
+# ssl_client_cert = "/path/to/client-cert.pem"
+# ssl_client_key = "/path/to/client-key.pem"
