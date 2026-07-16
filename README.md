@@ -61,16 +61,19 @@ ssl_ca = "/path/to/ca.pem" # required for verify_ca / verify_identity
 ## Keybindings
 
 | Key | Action |
-|---|---|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `Tab` | Cycle focus between panels |
+|---|---|---|
+| `j` / `↓` | Move down / Next history (in editor) |
+| `k` / `↑` | Move up / Previous history (in editor) |
+| `Tab` / `Shift+Tab` | Cycle focus between panels |
 | `Enter` | Connect (in list) / Execute query (in editor) / Toggle expand (in tree) |
 | `→` | Expand schema in tree |
 | `←` | Collapse schema in tree |
-| `Esc` | Return to query editor from results |
+| `Esc` | Return to query editor from results / Close popup |
+| `r` | Refresh schema tree |
+| `?` | Toggle help popup |
+| `D` | Disconnect from current database |
 | `Ctrl+C` | Cancel running query, or quit |
-| `q` | Quit (except when typing in query editor) |
+| `q` | Quit (except when typing in query editor / popup open) |
 
 ## Architecture
 

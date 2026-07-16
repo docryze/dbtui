@@ -52,6 +52,8 @@ pub struct App {
     query_handle: Option<tokio::task::JoinHandle<()>>,
     /// When the last error was set (for auto-fade).
     error_at: Option<Instant>,
+    /// Error message for popup overlay (for query errors).
+    error_popup: Option<String>,
 }
 
 impl App {
@@ -72,6 +74,7 @@ impl App {
             notice: None,
             query_handle: None,
             error_at: None,
+            error_popup: None,
         }
     }
 
@@ -189,7 +192,10 @@ impl App {
             Action::Quit => self.should_quit = true,
             Action::Focus(panel) => self.focus = *panel,
             Action::OpenPopup(kind) => self.mode = AppMode::Popup(*kind),
-            Action::ClosePopup => self.mode = AppMode::Normal,
+            Action::ClosePopup => {
+                self.mode = AppMode::Normal;
+                self.error_popup = None;
+            }
             Action::Connect(cfg) => {
                 self.mode = AppMode::Connecting;
                 self.last_error = None;
@@ -376,6 +382,8 @@ impl App {
                     }
                     Err(e) => {
                         self.set_error(e.to_string());
+                        self.error_popup = Some(e.to_string());
+                        self.mode = AppMode::Popup(PopupKind::Error);
                     }
                 }
                 self.pending_query = None;
@@ -426,11 +434,37 @@ impl App {
 
         self.components.status_bar.render(frame, right_bottom, &ctx);
 
-        // Draw help popup overlay.
+        // Draw popup overlays.
         if self.mode == AppMode::Popup(PopupKind::Help) {
             render_help_popup(frame, area);
+        } else if let Some(ref err) = self.error_popup {
+            render_error_popup(frame, area, err);
         }
     }
+}
+
+/// Render a centered error popup overlay with the given message.
+fn render_error_popup(frame: &mut Frame<'_>, area: Rect, message: &str) {
+    let width = 60.min(area.width).max(30);
+    let height = 8.min(area.height);
+    let popup = Rect {
+        x: area.width.saturating_sub(width) / 2,
+        y: area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Error ")
+        .border_style(Style::default().fg(ratatui::style::Color::Red));
+    frame.render_widget(
+        Paragraph::new(message)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        popup,
+    );
 }
 
 /// Render the help popup overlay showing keybindings.
