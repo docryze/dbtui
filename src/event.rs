@@ -2,6 +2,7 @@
 //! described in architecture §2.3.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::event::{self as crossterm_event, EventStream, KeyEvent, MouseEvent};
@@ -10,7 +11,7 @@ use tokio::sync::mpsc;
 
 use crate::components::{Panel, PopupKind};
 use crate::config::ConnectionConfig;
-use crate::db::{ConnectionHandle, QueryMeta, QueryPage, SchemaSnapshot};
+use crate::db::{ConnectionHandle, Database, QueryMeta, QueryPage, SchemaSnapshot};
 use crate::error::DbError;
 
 // ---------------------------------------------------------------------------
@@ -123,6 +124,8 @@ pub enum Action {
     CancelQuery(QueryId),
     /// Refresh the schema tree for a connection.
     LoadSchema(ConnectionId),
+    /// Select a database as the active/default database for queries.
+    SelectDatabase(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +146,8 @@ pub enum DbMessage {
     QueryComplete(QueryId, Result<QueryMeta, DbError>),
     /// Query was cancelled.
     Cancelled(QueryId),
+    /// Database switch (reconnect with new default DB) completed.
+    DatabaseSwitched(String, Result<Arc<dyn Database>, DbError>),
 }
 
 // ---------------------------------------------------------------------------

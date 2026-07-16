@@ -181,7 +181,7 @@ impl Component for SchemaTree {
                             } else {
                                 self.expanded.insert(name.clone());
                             }
-                            Action::RequestRender
+                            Action::SelectDatabase(name.clone())
                         }
                         Some(TreeEntry::Table { schema, name }) => Action::FillQuery(format!(
                             "SELECT * FROM `{schema}`.`{name}` LIMIT 100"

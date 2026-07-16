@@ -9,6 +9,14 @@ use ratatui::widgets::Paragraph;
 use crate::components::{AppContext, Component, Panel};
 use crate::event::{Action, Event};
 
+/// Append active database indicator to a label string.
+fn db_label(label: &mut String, active_db: Option<&str>) {
+    if let Some(db) = active_db {
+        use std::fmt::Write;
+        let _ = write!(label, " \u{00b7} \u{1F4CB} {db} ");
+    }
+}
+
 /// Bottom status bar showing current state and key hints.
 #[derive(Debug, Default)]
 pub struct StatusBar;
@@ -36,7 +44,7 @@ impl StatusBar {
 
 impl Component for StatusBar {
     fn render(&self, frame: &mut Frame<'_>, area: Rect, ctx: &AppContext<'_>) {
-        let label: String = match (
+        let mut label: String = match (
             ctx.error_message,
             ctx.is_connecting,
             ctx.is_executing,
@@ -57,6 +65,10 @@ impl Component for StatusBar {
             }
             (None, false, _, None, _) => " \u{25CB} ready ".into(),
         };
+        // Append active database indicator (only when connected).
+        if ctx.connection_name.is_some() {
+            db_label(&mut label, ctx.active_database);
+        }
 
         let hints = Self::hints(ctx);
         let label_len = u16::try_from(label.len()).unwrap_or(u16::MAX);
