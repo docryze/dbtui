@@ -17,6 +17,7 @@ use crate::config::ConnectionConfig;
 use crate::db::{ConnectionHandle, QueryMeta, SchemaSnapshot, mysql::MySqlBackend};
 use crate::error::Error;
 use crate::event::{Action, DbMessage, Event, QueryId};
+use crate::history::QueryHistory;
 use crate::tui::Tui;
 
 /// Target frame rate for rendering (frames per second).
@@ -54,6 +55,16 @@ pub struct App {
     error_at: Option<Instant>,
     /// Error message for popup overlay (for query errors).
     error_popup: Option<String>,
+    /// Active/default database for unqualified table references.
+    active_database: Option<String>,
+    /// Persistent query history (loaded from file).
+    history: QueryHistory,
+    /// SQL text of the last submitted query (for saving on success).
+    last_executed_sql: Option<String>,
+    /// Selected index in the history popup.
+    history_selected: usize,
+    /// Search filter text for the history popup.
+    history_search: String,
 }
 
 impl App {
@@ -75,6 +86,11 @@ impl App {
             query_handle: None,
             error_at: None,
             error_popup: None,
+            active_database: None,
+            history: QueryHistory::new(),
+            last_executed_sql: None,
+            history_selected: 0,
+            history_search: String::new(),
         }
     }
 
@@ -101,7 +117,58 @@ impl App {
                 return Action::None;
             }
 
-            // Popup mode — only Esc/q close the popup.
+            // Popup mode — Esc/q close; History popup allows navigation + search.
+            if matches!(self.mode, AppMode::Popup(PopupKind::History)) {
+                return match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => Action::ClosePopup,
+                    KeyCode::Up => {
+                        if self.history_selected > 0 {
+                            self.history_selected -= 1;
+                        }
+                        Action::RequestRender
+                    }
+                    KeyCode::Down => {
+                        let filtered = self.history.search(&self.history_search);
+                        let max = filtered.len().saturating_sub(1);
+                        if self.history_selected < max {
+                            self.history_selected += 1;
+                        }
+                        Action::RequestRender
+                    }
+                    KeyCode::Enter => {
+                        let filtered = self.history.search(&self.history_search);
+                        if let Some(entry) = filtered.get(self.history_selected) {
+                            let sql = entry.sql.clone();
+                            self.mode = AppMode::Normal;
+                            self.history_search.clear();
+                            Action::FillQuery(sql)
+                        } else {
+                            Action::ClosePopup
+                        }
+                    }
+                    KeyCode::Char('g') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        self.history_selected = 0;
+                        Action::RequestRender
+                    }
+                    KeyCode::Char('G') => {
+                        let filtered = self.history.search(&self.history_search);
+                        self.history_selected = filtered.len().saturating_sub(1);
+                        Action::RequestRender
+                    }
+                    KeyCode::Backspace => {
+                        self.history_search.pop();
+                        self.history_selected = 0;
+                        Action::RequestRender
+                    }
+                    KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.history_search.push(ch);
+                        self.history_selected = 0;
+                        Action::RequestRender
+                    }
+                    _ => Action::None,
+                };
+            }
+
             if matches!(self.mode, AppMode::Popup(_)) {
                 return match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => Action::ClosePopup,
@@ -135,16 +202,29 @@ impl App {
                 KeyCode::Char('?') => {
                     return Action::OpenPopup(PopupKind::Help);
                 }
+                KeyCode::Char('H') => {
+                    if self.connection.is_some() {
+                        self.history_selected = 0;
+                        return Action::OpenPopup(PopupKind::History);
+                    }
+                }
                 KeyCode::Char('D') => {
                     if let Some(ref conn) = self.connection {
                         return Action::Disconnect(conn.id);
                     }
                 }
                 KeyCode::Tab => {
-                    if self.connection.is_some() {
+                    // If the editor has an autocomplete popup open, let Tab
+                    // fall through to the editor to accept the suggestion.
+                    if self.focus == Panel::QueryEditor
+                        && self.components.query_editor.is_autocomplete_visible()
+                    {
+                        // Fall through to component dispatch below.
+                    } else if self.connection.is_some() {
                         return Action::Focus(self.focus.next());
+                    } else {
+                        return Action::None;
                     }
-                    return Action::None;
                 }
                 KeyCode::BackTab => {
                     if self.connection.is_some() {
@@ -170,6 +250,11 @@ impl App {
             is_executing: self.pending_query.is_some(),
             error_message: self.last_error.as_deref(),
             notice: self.notice.as_deref(),
+            active_database: self.active_database.as_deref(),
+            schema: self
+                .connection
+                .as_ref()
+                .and_then(|c| c.schema_snapshot.as_ref()),
         };
 
         if self.connection.is_some() {
@@ -196,6 +281,8 @@ impl App {
             Action::ClosePopup => {
                 self.mode = AppMode::Normal;
                 self.error_popup = None;
+                self.history_search.clear();
+                self.history_selected = 0;
             }
             Action::Connect(cfg) => {
                 self.mode = AppMode::Connecting;
@@ -213,6 +300,7 @@ impl App {
                                     name,
                                     backend,
                                     schema_snapshot: None,
+                                    config: cfg,
                                 };
                                 let _ = tx.send(DbMessage::Connected(Ok(handle))).await;
                             }
@@ -228,8 +316,13 @@ impl App {
             }
             Action::ExecuteQuery(sql) => {
                 if let Some(ref conn) = self.connection {
+                    // Cancel any running query first.
+                    if let Some(handle) = self.query_handle.take() {
+                        handle.abort();
+                    }
                     self.notice = None;
                     self.last_error = None;
+                    self.last_executed_sql = Some(sql.clone());
                     tracing::info!("executing: {sql}");
                     if is_query_sql(sql) {
                         let query_id = QueryId::new();
@@ -240,7 +333,9 @@ impl App {
                         let tx = self.db_tx.clone();
                         let sql_owned = sql.clone();
                         let handle = tokio::spawn(async move {
-                            let _ = backend.query_stream(&sql_owned, query_id, tx).await;
+                            let _ = backend
+                                .query_stream(&sql_owned, query_id, tx)
+                                .await;
                         });
                         self.query_handle = Some(handle);
                     } else {
@@ -283,6 +378,7 @@ impl App {
                 if let Some(ref conn) = self.connection {
                     let backend = std::sync::Arc::clone(&conn.backend);
                     let tx = self.db_tx.clone();
+                    let active_db = self.active_database.clone();
                     tokio::spawn(async move {
                         match backend.list_schemas().await {
                             Ok(schemas) => {
@@ -297,10 +393,22 @@ impl App {
                                         .collect();
                                     tree.push((s.name.clone(), tables));
                                 }
+
+                                // Load column names for the active database.
+                                let active_table_columns = match &active_db {
+                                    Some(db) => {
+                                        backend.list_table_columns(db).await.unwrap_or_default()
+                                    }
+                                    None => std::collections::HashMap::new(),
+                                };
+
                                 let _ = tx
                                     .send(DbMessage::SchemaLoaded(
                                         conn_id,
-                                        Ok(SchemaSnapshot { tree }),
+                                        Ok(SchemaSnapshot {
+                                            tree,
+                                            active_table_columns,
+                                        }),
                                     ))
                                     .await;
                             }
@@ -333,7 +441,45 @@ impl App {
                 self.focus = Panel::SchemaTree;
                 self.notice = Some("Disconnected".into());
                 self.last_error = None;
+                self.active_database = None;
                 tracing::info!("disconnected");
+            }
+            Action::SelectDatabase(db) => {
+                // Reconnect with the selected database as the pool default.
+                // This guarantees every pooled connection uses `db`, so
+                // unqualified queries (e.g. `SELECT * FROM orders`) resolve
+                // correctly without `database.table` prefixes.
+                self.active_database = Some(db.clone());
+                self.notice = Some(format!("Switching to database `{db}`…"));
+                self.mode = AppMode::Connecting;
+                tracing::info!("switching database to `{db}`");
+                if let Some(ref conn) = self.connection {
+                    let tx = self.db_tx.clone();
+                    let mut cfg = conn.config.clone();
+                    cfg.database = Some(db.clone());
+                    let db_name = db.clone();
+                    tokio::spawn(async move {
+                        match MySqlBackend::connect(&cfg).await {
+                            Ok(backend) => match backend.ping().await {
+                                Ok(()) => {
+                                    let _ = tx
+                                        .send(DbMessage::DatabaseSwitched(db_name, Ok(backend)))
+                                        .await;
+                                }
+                                Err(e) => {
+                                    let _ = tx
+                                        .send(DbMessage::DatabaseSwitched(db_name, Err(e)))
+                                        .await;
+                                }
+                            },
+                            Err(e) => {
+                                let _ = tx
+                                    .send(DbMessage::DatabaseSwitched(db_name, Err(e)))
+                                    .await;
+                            }
+                        }
+                    });
+                }
             }
             // No-op variants — implemented in later milestones.
             Action::None | Action::RequestRender | Action::SwitchTab(_) => {
@@ -380,6 +526,11 @@ impl App {
                     Ok(meta) => {
                         self.notice = Some(format_query_notice(&meta));
                         self.components.result_table.set_complete(&meta);
+                        // Save to history only on success.
+                        if let Some(ref sql) = self.last_executed_sql {
+                            self.history.add(sql);
+                            self.components.query_editor.push_history(sql);
+                        }
                     }
                     Err(e) => {
                         self.set_error(e.to_string());
@@ -388,6 +539,7 @@ impl App {
                     }
                 }
                 self.pending_query = None;
+                self.last_executed_sql = None;
             }
             DbMessage::SchemaLoaded(_, result) => match result {
                 Ok(snapshot) => {
@@ -400,6 +552,33 @@ impl App {
                     self.set_error(e.to_string());
                 }
             },
+            DbMessage::DatabaseSwitched(db_name, result) => {
+                self.mode = AppMode::Normal;
+                match result {
+                    Ok(backend) => {
+                        if let Some(ref mut conn) = self.connection {
+                            conn.backend = backend;
+                            conn.schema_snapshot = None;
+                            conn.config.database = Some(db_name.clone());
+                        }
+                        // Reload per-database history.
+                        self.history = QueryHistory::for_database(&db_name);
+                        // Sync editor in-memory history.
+                        self.components.query_editor.sync_history(&self.history.sql_list());
+                        self.notice = Some(format!("Using database `{db_name}`"));
+                        tracing::info!("database switched to `{db_name}`");
+                        // Reload schema tree for the new default database.
+                        if let Some(ref conn) = self.connection {
+                            let conn_id = conn.id;
+                            self.apply_action(&Action::LoadSchema(conn_id));
+                        }
+                    }
+                    Err(e) => {
+                        self.set_error(e.to_string());
+                        self.active_database = None;
+                    }
+                }
+            }
             _ => {}
         }
         self.dirty = true;
@@ -419,6 +598,11 @@ impl App {
             is_executing: self.pending_query.is_some(),
             error_message: self.last_error.as_deref(),
             notice: self.notice.as_deref(),
+            active_database: self.active_database.as_deref(),
+            schema: self
+                .connection
+                .as_ref()
+                .and_then(|c| c.schema_snapshot.as_ref()),
         };
 
         if self.connection.is_some() {
@@ -434,13 +618,30 @@ impl App {
             self.components.query_editor.render(frame, right_top, &ctx);
         }
 
+        // Status bar is below the schema tree (left column bottom).
         self.components.status_bar.render(frame, right_bottom, &ctx);
 
         // Draw popup overlays.
-        if self.mode == AppMode::Popup(PopupKind::Help) {
-            render_help_popup(frame, area, ctx.theme);
-        } else if let Some(ref err) = self.error_popup {
-            render_error_popup(frame, area, err, ctx.theme);
+        match self.mode {
+            AppMode::Popup(PopupKind::Help) => {
+                render_help_popup(frame, area, ctx.theme);
+            }
+            AppMode::Popup(PopupKind::History) => {
+                let filtered: Vec<&crate::history::HistoryEntry> =
+                    self.history.search(&self.history_search);
+                render_history_popup(
+                    frame,
+                    area,
+                    &filtered,
+                    self.history_selected,
+                    &self.history_search,
+                    ctx.theme,
+                );
+            }
+            AppMode::Popup(PopupKind::Error) if self.error_popup.is_some() => {
+                render_error_popup(frame, area, self.error_popup.as_ref().unwrap(), ctx.theme);
+            }
+            _ => {}
         }
     }
 }
@@ -472,9 +673,9 @@ fn render_error_popup(frame: &mut Frame<'_>, area: Rect, message: &str, theme: &
 /// Render the help popup overlay showing keybindings.
 fn render_help_popup(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
     let popup = Rect {
-        x: area.width.saturating_sub(50) / 2,
+        x: area.width.saturating_sub(62) / 2,
         y: area.height.saturating_sub(20) / 2,
-        width: 50.min(area.width),
+        width: 62.min(area.width),
         height: 20.min(area.height),
     };
 
@@ -482,8 +683,10 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
         ("Tab / Shift+Tab", "Cycle panel focus"),
         ("↑/↓/←/→", "Navigate / Move cursor"),
         ("Enter", "Execute query / Connect / Toggle tree"),
+        ("Alt+Enter", "Insert newline (multi-line SQL)"),
         ("Esc", "Return to editor from results"),
         ("r", "Refresh schema tree"),
+        ("H", "Browse query history"),
         ("g / G", "Go to top / bottom in results"),
         ("PgUp / PgDn", "Scroll page in results"),
         ("Ctrl+U / Ctrl+D", "Scroll half page up / down"),
@@ -493,7 +696,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
         ("?", "Toggle this help"),
         ("D", "Disconnect"),
         ("Ctrl+C", "Cancel query / Quit"),
-        ("q", "Quit (except in editor)"),
+        ("q", "Quit (except when typing in editor)"),
     ];
 
     let text: String = {
@@ -526,6 +729,176 @@ fn is_query_sql(sql: &str) -> bool {
         || upper.starts_with("WITH")
 }
 
+/// Render the history popup overlay — split view: list (left) + preview (right).
+fn render_history_popup(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    entries: &[&crate::history::HistoryEntry],
+    selected: usize,
+    search: &str,
+    theme: &Theme,
+) {
+    let popup_width = 100.min(area.width);
+    let popup_height = 24.min(area.height);
+    let popup = Rect {
+        x: area.width.saturating_sub(popup_width) / 2,
+        y: area.height.saturating_sub(popup_height) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup);
+
+    // Split into left (list, 40%) and right (preview, 60%).
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(popup);
+
+    let list_area = cols[0];
+    let preview_area = cols[1];
+
+    let title = if search.is_empty() {
+        format!(" History ({}) ", entries.len())
+    } else {
+        format!(" History ({}) — \"{search}\" ", entries.len())
+    };
+
+    let footer = " [Enter] load  [↑↓] nav  [type] search  [Esc] close ";
+
+    if entries.is_empty() {
+        let msg = if search.is_empty() {
+            " No history yet "
+        } else {
+            " No matches "
+        };
+        frame.render_widget(
+            Paragraph::new(msg).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(Style::default().fg(theme.highlight)),
+            ),
+            popup,
+        );
+        return;
+    }
+
+    // --- Left: query list ---
+    let max_sql_len = list_area.width.saturating_sub(8) as usize;
+
+    let items: Vec<ratatui::text::Line<'_>> = entries
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            let is_selected = i == selected;
+            let style = if is_selected {
+                Style::default()
+                    .fg(ratatui::style::Color::Black)
+                    .bg(theme.highlight)
+            } else {
+                Style::default().fg(theme.text)
+            };
+
+            // Collapse multi-line SQL for the list display.
+            let single_line = entry.sql.replace('\n', " ");
+            let display_sql = if single_line.len() > max_sql_len {
+                format!("{}…", &single_line[..max_sql_len])
+            } else {
+                single_line
+            };
+
+            let count_tag = if entry.count > 1 {
+                format!(" {}×", entry.count)
+            } else {
+                String::new()
+            };
+
+            ratatui::text::Line::styled(format!("{count_tag:>4} {display_sql}"), style)
+        })
+        .collect();
+
+    let list = ratatui::widgets::List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(Style::default().fg(theme.highlight)),
+    );
+
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(selected));
+    frame.render_stateful_widget(list, list_area, &mut list_state);
+
+    // --- Right: full SQL preview with syntax highlighting ---
+    let preview_entry = entries.get(selected);
+    let preview_lines: Vec<ratatui::text::Line<'_>> = match preview_entry {
+        Some(entry) => {
+            use crate::sql::{TokenKind, tokenize};
+            let count_label = if entry.count > 1 {
+                format!("  (executed {}× — last: {})\n", entry.count, short_timestamp(&entry.last_used))
+            } else {
+                format!("  (last: {})\n", short_timestamp(&entry.last_used))
+            };
+
+            let mut lines: Vec<ratatui::text::Line<'_>> = vec![ratatui::text::Line::styled(
+                count_label,
+                Style::default().fg(theme.text_dim),
+            )];
+
+            // Render each line of the SQL with syntax highlighting.
+            for (i, line_text) in entry.sql.split('\n').enumerate() {
+                let mut spans: Vec<ratatui::text::Span<'_>> = Vec::new();
+                if i == 0 {
+                    spans.push(ratatui::text::Span::raw("  "));
+                } else {
+                    spans.push(ratatui::text::Span::raw("  "));
+                }
+                let tokens = tokenize(line_text);
+                for tok in &tokens {
+                    let color = match tok.kind {
+                        TokenKind::Keyword => theme.sql_keyword,
+                        TokenKind::Function => theme.sql_function,
+                        TokenKind::String => theme.sql_string,
+                        TokenKind::Number => theme.sql_number,
+                        TokenKind::Comment => theme.sql_comment,
+                        TokenKind::Operator => theme.sql_operator,
+                        _ => theme.text,
+                    };
+                    spans.push(ratatui::text::Span::styled(
+                        tok.text,
+                        Style::default().fg(color),
+                    ));
+                }
+                lines.push(ratatui::text::Line::from(spans));
+            }
+            lines
+        }
+        None => vec![ratatui::text::Line::raw(" (no selection)")],
+    };
+
+    let preview_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Preview ")
+        .border_style(Style::default().fg(theme.highlight))
+        .title_bottom(footer);
+
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(preview_lines).block(preview_block),
+        preview_area,
+    );
+}
+
+/// Shorten an ISO 8601 timestamp to a human-readable "date time" string.
+fn short_timestamp(iso: &str) -> String {
+    // Input like "2026-07-16T05:39:47.123456789+00:00"
+    // Output: "2026-07-16 05:39"
+    if iso.len() >= 16 {
+        format!("{} {}", &iso[..10], &iso[11..16])
+    } else {
+        iso.to_string()
+    }
+}
+
 /// Format a query completion notice for the status bar.
 fn format_query_notice(meta: &QueryMeta) -> String {
     meta.affected_rows.map_or_else(
@@ -541,26 +914,31 @@ fn format_query_notice(meta: &QueryMeta) -> String {
     )
 }
 
-/// Compute the three-panel layout: left (schema), right-top (editor),
-/// right-bottom (status bar).
+/// Compute the layout: left column (schema + status bar), right column (editor/results).
+///
+/// Returns `(schema_area, main_area, status_area)`:
+/// - `schema_area` — top of left column (schema tree / connection list)
+/// - `main_area` — full-height right column (query editor / result table)
+/// - `status_area` — bottom of left column (status bar)
 fn layout(area: Rect) -> (Rect, Rect, Rect) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(area);
 
-    let left = columns.first().copied().unwrap_or_default();
+    let left_col = columns.first().copied().unwrap_or_default();
     let right_col = columns.get(1).copied().unwrap_or_default();
 
-    let right_rows = Layout::default()
+    // Left column: schema tree (top) + status bar (bottom, 1 line).
+    let left_rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(3)])
-        .split(right_col);
+        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .split(left_col);
 
-    let right_top = right_rows.first().copied().unwrap_or_default();
-    let right_bottom = right_rows.get(1).copied().unwrap_or_default();
+    let schema_area = left_rows.first().copied().unwrap_or_default();
+    let status_area = left_rows.get(1).copied().unwrap_or_default();
 
-    (left, right_top, right_bottom)
+    (schema_area, right_col, status_area)
 }
 
 /// Main event loop (architecture §4.3).
