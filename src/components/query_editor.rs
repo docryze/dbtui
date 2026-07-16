@@ -71,6 +71,12 @@ impl QueryEditor {
             .count()
             .saturating_add(PROMPT.len())
     }
+
+    /// Replace the buffer contents (e.g. from schema tree table selection).
+    pub fn set_text(&mut self, text: String) {
+        self.buffer = text;
+        self.cursor = self.buffer.len();
+    }
 }
 
 impl Component for QueryEditor {

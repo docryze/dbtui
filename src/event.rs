@@ -117,6 +117,8 @@ pub enum Action {
     Disconnect(ConnectionId),
     /// Execute a SQL query.
     ExecuteQuery(String),
+    /// Fill the query editor with text without executing.
+    FillQuery(String),
     /// Cancel an in-progress query.
     CancelQuery(QueryId),
     /// Refresh the schema tree for a connection.

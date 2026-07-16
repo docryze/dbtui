@@ -146,10 +146,8 @@ pub struct ExecResult {
 /// A snapshot of schemas and tables for a connection.
 #[derive(Debug, Clone)]
 pub struct SchemaSnapshot {
-    /// All schemas.
-    pub schemas: Vec<SchemaInfo>,
-    /// All tables (across schemas).
-    pub tables: Vec<TableInfo>,
+    /// Tree of `(schema_name, table_names)` pairs.
+    pub tree: Vec<(String, Vec<String>)>,
 }
 
 // ---------------------------------------------------------------------------
