@@ -1,0 +1,135 @@
+[package]
+name = "dbtui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A terminal UI database client (MySQL first)"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# --- TUI ---
+ratatui = "0.30"                 # default features include the crossterm backend
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures = "0.3"                  # EventStream / Stream combinators
+
+# --- async runtime ---
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+
+# --- database ---
+sqlx = { version = "0.9", default-features = false, features = [
+    "mysql",
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "chrono",
+    "uuid",
+] }
+async-trait = "0.1"
+
+# --- datetime ---
+chrono = "0.4"                  # datetime decoding from MySQL rows
+
+# --- error handling ---
+thiserror = "2"
+color-eyre = "0.6"
+
+# --- config / serialization ---
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "6"
+
+# --- logging ---
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# --- CLI ---
+clap = { version = "4", features = ["derive"] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "allow" # ratatui `Terminal` does not impl Debug
+unreachable_pub = "allow"   # binary crate: private modules make `pub` crate-internal already
+unused_must_use = "deny"
+dead_code = "allow"           # M1 defines skeleton types for M2+; tighten after M2
+elided_lifetimes_in_paths = "warn"
+non_ascii_idents = "deny"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+single_use_lifetimes = "warn"
+
+[lints.clippy]
+# groups
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# hard denies
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+mem_forget = "deny"
+as_underscore = "deny"
+as_ptr_cast_mut = "deny"
+fn_to_numeric_cast_any = "deny"
+
+# warns (cast hygiene etc.)
+arithmetic_side_effects = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+cast_sign_loss = "warn"
+ptr_as_ptr = "warn"
+borrow_as_ptr = "warn"
+clone_on_ref_ptr = "warn"
+mutex_atomic = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+exit = "warn"
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+use_debug = "warn"
+
+# stylistic relaxations
+module_name_repetitions = "allow"
+missing_const_for_fn = "allow"   # noisy heuristic; trivial getters are not const-callable in practice
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+
+# cargo-group project relaxations
+cargo_common_metadata = "allow"   # new project, no repository yet
+multiple_crate_versions = "allow" # sqlx/ratatui dep tree is unavoidable here
+
+# restriction rails
+mod_module_files = "warn"     # prefer foo.rs over foo/mod.rs
+empty_drop = "warn"
+empty_structs_with_brackets = "warn"
+empty_enums = "warn"
+exhaustive_enums = "warn"
+exhaustive_structs = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+debug = "line-tables-only"
+# NOTE: panic = "unwind" (the default) is kept intentionally. `TerminalGuard::drop`
+# must run on panic to restore the terminal from raw mode — do NOT set "abort".
+
+[profile.dev]
+opt-level = 0
+debug = true
+incremental = true
+codegen-units = 256
+split-debuginfo = "unpacked"
