@@ -23,11 +23,13 @@ sqlx = { version = "0.9", default-features = false, features = [
     "macros",
     "chrono",
     "uuid",
+    "rust_decimal",
 ] }
 async-trait = "0.1"
 
 # --- datetime ---
 chrono = "0.4"                  # datetime decoding from MySQL rows
+rust_decimal = "1.36"           # DECIMAL/NUMERIC decoding from MySQL rows
 
 # --- error handling ---
 thiserror = "2"
@@ -35,6 +37,7 @@ color-eyre = "0.6"
 
 # --- config / serialization ---
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
 dirs = "6"
 
