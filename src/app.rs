@@ -44,6 +44,8 @@ pub struct App {
     pending_query: Option<QueryId>,
     /// Transient status notice (e.g. "42 rows in 0.3s").
     notice: Option<String>,
+    /// Handle to the current query task (for cancellation).
+    query_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl App {
@@ -62,6 +64,7 @@ impl App {
             last_error: None,
             pending_query: None,
             notice: None,
+            query_handle: None,
         }
     }
 
@@ -75,6 +78,10 @@ impl App {
 
             match key.code {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Cancel query if one is running, otherwise quit.
+                    if let Some(qid) = self.pending_query {
+                        return Action::CancelQuery(qid);
+                    }
                     return Action::Quit;
                 }
                 KeyCode::Char('q') => {
@@ -169,6 +176,7 @@ impl App {
                 if let Some(ref conn) = self.connection {
                     self.notice = None;
                     self.last_error = None;
+                    tracing::info!("executing: {sql}");
                     if is_query_sql(sql) {
                         let query_id = QueryId::new();
                         self.pending_query = Some(query_id);
@@ -177,16 +185,17 @@ impl App {
                         let backend = std::sync::Arc::clone(&conn.backend);
                         let tx = self.db_tx.clone();
                         let sql_owned = sql.clone();
-                        tokio::spawn(async move {
+                        let handle = tokio::spawn(async move {
                             let _ = backend.query_stream(&sql_owned, query_id, tx).await;
                         });
+                        self.query_handle = Some(handle);
                     } else {
                         let backend = std::sync::Arc::clone(&conn.backend);
                         let tx = self.db_tx.clone();
                         let query_id = QueryId::new();
                         self.pending_query = Some(query_id);
                         let sql_owned = sql.clone();
-                        tokio::spawn(async move {
+                        let handle = tokio::spawn(async move {
                             match backend.execute(&sql_owned).await {
                                 Ok(result) => {
                                     let _ = tx
@@ -207,6 +216,7 @@ impl App {
                                 }
                             }
                         });
+                        self.query_handle = Some(handle);
                     }
                 }
             }
@@ -247,12 +257,17 @@ impl App {
                     });
                 }
             }
+            Action::CancelQuery(_) => {
+                if let Some(handle) = self.query_handle.take() {
+                    handle.abort();
+                }
+                self.pending_query = None;
+                self.notice = Some("Query cancelled".into());
+                tracing::info!("query cancelled");
+            }
             // No-op variants — implemented in later milestones.
-            Action::None
-            | Action::RequestRender
-            | Action::SwitchTab(_)
-            | Action::Disconnect(_)
-            | Action::CancelQuery(_) => {}
+            Action::None | Action::RequestRender | Action::SwitchTab(_) | Action::Disconnect(_) => {
+            }
         }
         self.dirty = true;
     }
