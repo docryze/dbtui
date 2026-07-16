@@ -41,6 +41,10 @@ impl SchemaTree {
     pub fn set_data(&mut self, snapshot: &SchemaSnapshot) {
         self.data.clone_from(&snapshot.tree);
         self.expanded.clear();
+        // Auto-expand the first database for convenience.
+        if let Some((first_schema, _)) = self.data.first() {
+            self.expanded.insert(first_schema.clone());
+        }
         self.state
             .select(if self.data.is_empty() { None } else { Some(0) });
     }
