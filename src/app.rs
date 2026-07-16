@@ -1,7 +1,7 @@
 //! Application state machine: event dispatch, action execution, and render
 //! coordination (architecture §3.3, §4.3).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
@@ -46,6 +46,8 @@ pub struct App {
     notice: Option<String>,
     /// Handle to the current query task (for cancellation).
     query_handle: Option<tokio::task::JoinHandle<()>>,
+    /// When the last error was set (for auto-fade).
+    error_at: Option<Instant>,
 }
 
 impl App {
@@ -65,6 +67,22 @@ impl App {
             pending_query: None,
             notice: None,
             query_handle: None,
+            error_at: None,
+        }
+    }
+
+    /// Set an error message and record the timestamp for auto-fade.
+    fn set_error(&mut self, msg: String) {
+        self.last_error = Some(msg);
+        self.error_at = Some(Instant::now());
+    }
+
+    /// Called on each draw interval — auto-fade errors after 5 seconds.
+    fn tick(&mut self) {
+        if self.error_at.is_some_and(|at| at.elapsed().as_secs() >= 5) {
+            self.last_error = None;
+            self.error_at = None;
+            self.dirty = true;
         }
     }
 
@@ -286,7 +304,7 @@ impl App {
                         self.apply_action(&Action::LoadSchema(conn_id));
                     }
                     Err(e) => {
-                        self.last_error = Some(e.to_string());
+                        self.set_error(e.to_string());
                     }
                 }
             }
@@ -300,7 +318,7 @@ impl App {
                             self.components.result_table.append_rows(page.rows);
                         }
                         Err(e) => {
-                            self.last_error = Some(e.to_string());
+                            self.set_error(e.to_string());
                         }
                     }
                 }
@@ -312,7 +330,7 @@ impl App {
                         self.components.result_table.set_complete(&meta);
                     }
                     Err(e) => {
-                        self.last_error = Some(e.to_string());
+                        self.set_error(e.to_string());
                     }
                 }
                 self.pending_query = None;
@@ -325,7 +343,7 @@ impl App {
                     self.components.schema_tree.set_data(&snapshot);
                 }
                 Err(e) => {
-                    self.last_error = Some(e.to_string());
+                    self.set_error(e.to_string());
                 }
             },
             _ => {}
@@ -451,6 +469,7 @@ pub async fn run(
             }
 
             _ = draw_interval.tick() => {
+                app.tick();
                 if app.dirty {
                     terminal.draw(|f| app.render(f))?;
                     app.dirty = false;
