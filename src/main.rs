@@ -12,6 +12,8 @@ mod config;
 mod db;
 mod error;
 mod event;
+mod history;
+mod sql;
 mod tui;
 
 use app::App;
