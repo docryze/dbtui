@@ -66,6 +66,8 @@ pub enum PopupKind {
     Input,
     /// Help / keybindings.
     Help,
+    /// Query history browser.
+    History,
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +113,18 @@ pub struct Theme {
     pub status_ready: Color,
     /// Status bar error indicator color.
     pub status_error: Color,
+    /// SQL keyword color (SELECT, FROM, WHERE, etc.)
+    pub sql_keyword: Color,
+    /// SQL function color (COUNT, SUM, etc.)
+    pub sql_function: Color,
+    /// SQL string literal color ('...')
+    pub sql_string: Color,
+    /// SQL numeric literal color (123, 45.67)
+    pub sql_number: Color,
+    /// SQL comment color (-- ...)
+    pub sql_comment: Color,
+    /// SQL operator color (=, +, *, etc.)
+    pub sql_operator: Color,
 }
 
 impl Default for Theme {
@@ -126,6 +140,12 @@ impl Default for Theme {
             warning: Color::Yellow,
             status_ready: Color::Green,
             status_error: Color::Red,
+            sql_keyword: Color::Cyan,
+            sql_function: Color::Yellow,
+            sql_string: Color::Green,
+            sql_number: Color::Magenta,
+            sql_comment: Color::DarkGray,
+            sql_operator: Color::Gray,
         }
     }
 }
@@ -153,6 +173,10 @@ pub struct AppContext<'a> {
     pub error_message: Option<&'a str>,
     /// Transient notice (e.g. "42 rows in 0.3s").
     pub notice: Option<&'a str>,
+    /// Active/default database for unqualified table references.
+    pub active_database: Option<&'a str>,
+    /// Schema snapshot for autocomplete suggestions (tables/schemas).
+    pub schema: Option<&'a crate::db::SchemaSnapshot>,
 }
 
 // ---------------------------------------------------------------------------
