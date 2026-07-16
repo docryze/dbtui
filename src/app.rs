@@ -167,6 +167,7 @@ impl App {
             theme: &self.theme,
             connection_name: self.connection.as_ref().map(|c| c.name.as_str()),
             is_connecting: self.mode == AppMode::Connecting,
+            is_executing: self.pending_query.is_some(),
             error_message: self.last_error.as_deref(),
             notice: self.notice.as_deref(),
         };
@@ -415,6 +416,7 @@ impl App {
             theme: &self.theme,
             connection_name: self.connection.as_ref().map(|c| c.name.as_str()),
             is_connecting: self.mode == AppMode::Connecting,
+            is_executing: self.pending_query.is_some(),
             error_message: self.last_error.as_deref(),
             notice: self.notice.as_deref(),
         };

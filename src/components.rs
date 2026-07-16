@@ -128,6 +128,8 @@ pub struct AppContext<'a> {
     pub connection_name: Option<&'a str>,
     /// Whether a connection attempt is in progress.
     pub is_connecting: bool,
+    /// Whether a query is currently being executed.
+    pub is_executing: bool,
     /// Last error message for status bar display.
     pub error_message: Option<&'a str>,
     /// Transient notice (e.g. "42 rows in 0.3s").

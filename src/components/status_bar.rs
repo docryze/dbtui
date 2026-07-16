@@ -39,18 +39,23 @@ impl Component for StatusBar {
         let label: String = match (
             ctx.error_message,
             ctx.is_connecting,
+            ctx.is_executing,
             ctx.connection_name,
             ctx.notice,
         ) {
-            (Some(err), _, _, _) => format!(" \u{2716} ERROR: {err} "),
-            (None, true, _, _) => " \u{25D4} connecting... ".into(),
-            (None, false, Some(name), Some(notice)) => {
+            (Some(err), _, _, _, _) => format!(" \u{2716} ERROR: {err} "),
+            (None, true, _, _, _) => " \u{25D4} connecting... ".into(),
+            (None, false, true, Some(name), _) => {
+                format!(" \u{25C9} {name}  \u{00b7} executing... ")
+            }
+            (None, false, true, None, _) => " \u{25D4} executing... ".into(),
+            (None, false, _, Some(name), Some(notice)) => {
                 format!(" \u{25C9} {name}  \u{00b7} {notice} ")
             }
-            (None, false, Some(name), None) => {
+            (None, false, _, Some(name), None) => {
                 format!(" \u{25C9} {name}  \u{00b7} connected ")
             }
-            (None, false, None, _) => " \u{25CB} ready ".into(),
+            (None, false, _, None, _) => " \u{25CB} ready ".into(),
         };
 
         let hints = Self::hints(ctx);
