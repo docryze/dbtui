@@ -110,8 +110,8 @@ impl Component for SchemaTree {
 
         let list = List::new(items).block(block).highlight_style(
             Style::default()
-                .fg(ctx.theme.border_focused)
-                .add_modifier(Modifier::REVERSED),
+                .fg(ctx.theme.highlight)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
         );
 
         let mut state = self.state;

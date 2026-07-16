@@ -438,15 +438,15 @@ impl App {
 
         // Draw popup overlays.
         if self.mode == AppMode::Popup(PopupKind::Help) {
-            render_help_popup(frame, area);
+            render_help_popup(frame, area, ctx.theme);
         } else if let Some(ref err) = self.error_popup {
-            render_error_popup(frame, area, err);
+            render_error_popup(frame, area, err, ctx.theme);
         }
     }
 }
 
 /// Render a centered error popup overlay with the given message.
-fn render_error_popup(frame: &mut Frame<'_>, area: Rect, message: &str) {
+fn render_error_popup(frame: &mut Frame<'_>, area: Rect, message: &str, theme: &Theme) {
     let width = 60.min(area.width).max(30);
     let height = 8.min(area.height);
     let popup = Rect {
@@ -460,7 +460,7 @@ fn render_error_popup(frame: &mut Frame<'_>, area: Rect, message: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Error ")
-        .border_style(Style::default().fg(ratatui::style::Color::Red));
+        .border_style(Style::default().fg(theme.status_error));
     frame.render_widget(
         Paragraph::new(message)
             .block(block)
@@ -470,7 +470,7 @@ fn render_error_popup(frame: &mut Frame<'_>, area: Rect, message: &str) {
 }
 
 /// Render the help popup overlay showing keybindings.
-fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
+fn render_help_popup(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
     let popup = Rect {
         x: area.width.saturating_sub(50) / 2,
         y: area.height.saturating_sub(20) / 2,
@@ -510,7 +510,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Help ")
-        .border_style(Style::default().fg(ratatui::style::Color::Cyan));
+        .border_style(Style::default().fg(theme.highlight));
     frame.render_widget(
         Paragraph::new(text).block(block).wrap(Wrap { trim: false }),
         popup,

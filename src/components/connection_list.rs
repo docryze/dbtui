@@ -53,13 +53,13 @@ impl Component for ConnectionList {
         let items: Vec<ListItem<'_>> = self
             .configs
             .iter()
-            .map(|c| ListItem::new(format!(" {} ({})", c.name, c.host)))
+            .map(|c| ListItem::new(format!(" {} \u{2192} {}", c.name, c.host)))
             .collect();
 
         let list = List::new(items).block(block).highlight_style(
             Style::default()
-                .fg(ctx.theme.border_focused)
-                .add_modifier(Modifier::BOLD),
+                .fg(ctx.theme.highlight)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
         );
 
         // ListState is Copy — copy the value for rendering.

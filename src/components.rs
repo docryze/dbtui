@@ -84,20 +84,30 @@ pub enum AppMode {
     Popup(PopupKind),
 }
 
-/// Color theme for the UI.
+/// Color theme for the UI — professional TUI color palette.
+///
+/// Designed for readability on both light and dark terminals, using
+/// semantic colors that create clear visual hierarchy without being
+/// harsh on the eyes.
 #[derive(Debug, Clone)]
 pub struct Theme {
     /// Border color for the focused panel.
     pub border_focused: Color,
     /// Border color for non-focused panels.
     pub border_normal: Color,
-    /// Default text color.
+    /// Primary text color.
     pub text: Color,
     /// Dimmed text color (NULL, secondary info).
     pub text_dim: Color,
-    /// Default background color (for alternating row styles).
+    /// Background color (used for alternating row styles).
     pub bg: Color,
-    /// Status bar "ready"/"connected" indicator color.
+    /// Highlight / selection color.
+    pub highlight: Color,
+    /// Success / positive state color.
+    pub success: Color,
+    /// Warning / caution state color.
+    pub warning: Color,
+    /// Status bar ready indicator color.
     pub status_ready: Color,
     /// Status bar error indicator color.
     pub status_error: Color,
@@ -111,6 +121,9 @@ impl Default for Theme {
             text: Color::Gray,
             text_dim: Color::DarkGray,
             bg: Color::Reset,
+            highlight: Color::Blue,
+            success: Color::Green,
+            warning: Color::Yellow,
             status_ready: Color::Green,
             status_error: Color::Red,
         }

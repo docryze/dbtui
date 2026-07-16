@@ -65,6 +65,12 @@ impl Component for StatusBar {
 
         let color = if ctx.error_message.is_some() {
             ctx.theme.status_error
+        } else if ctx.is_connecting {
+            ctx.theme.warning
+        } else if ctx.is_executing {
+            ctx.theme.highlight
+        } else if ctx.notice.is_some() {
+            ctx.theme.success
         } else {
             ctx.theme.status_ready
         };

@@ -175,9 +175,14 @@ impl Component for QueryEditor {
             ctx.theme.border_normal
         };
 
+        let title = if self.history_index.is_some() {
+            " Query (history) "
+        } else {
+            " Query "
+        };
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Query ")
+            .title(title)
             .border_style(Style::default().fg(border_color));
 
         let inner = block.inner(area);

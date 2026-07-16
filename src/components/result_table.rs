@@ -6,7 +6,7 @@
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 
 use crate::components::{AppContext, Component, Panel};
@@ -176,7 +176,6 @@ impl Component for ResultTable {
         let header = Row::new(header_cells).height(1);
 
         // Data rows with zebra striping.
-        let alt_bg = ctx.theme.bg;
         let data_rows: Vec<Row<'_>> = self
             .rows
             .iter()
@@ -192,7 +191,8 @@ impl Component for ResultTable {
                     })
                     .collect();
                 let style = if i % 2 == 1 {
-                    Style::default().bg(alt_bg)
+                    // Subtle zebra stripe via indexed dark gray.
+                    Style::default().bg(Color::Indexed(236))
                 } else {
                     Style::default()
                 };
@@ -204,7 +204,11 @@ impl Component for ResultTable {
         let table = Table::new(data_rows, widths)
             .header(header)
             .block(block)
-            .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+            .row_highlight_style(
+                Style::default()
+                    .fg(ctx.theme.highlight)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+            );
 
         let mut state = self.state;
         frame.render_stateful_widget(table, area, &mut state);
